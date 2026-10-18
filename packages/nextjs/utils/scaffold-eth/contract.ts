@@ -1,4 +1,4 @@
-import { getParsedError } from "./getParsedError";
+import { decodeRevertReason, getParsedError } from "./getParsedError";
 import { AllowedChainIds } from "./networks";
 import { notification } from "./notification";
 import { MutateOptions } from "@tanstack/react-query";
@@ -343,6 +343,20 @@ export type AbiParameterTuple = Extract<AbiParameter, { type: "tuple" | `tuple[$
  */
 export const getParsedErrorWithAllAbis = (error: any, chainId: AllowedChainIds): string => {
   const originalParsedError = getParsedError(error);
+
+  // The raw revert payload may hold a custom error only the deployed contracts know about
+  try {
+    const chainContracts = deployedContractsData[chainId as keyof typeof deployedContractsData];
+    const allAbis: Abi = chainContracts
+      ? (Object.values(chainContracts).flatMap(contract => (contract as { abi?: Abi }).abi ?? []) as unknown as Abi)
+      : [];
+    const decodedError = decodeRevertReason(error, allAbis);
+    if (decodedError) {
+      return decodedError;
+    }
+  } catch (lookupError) {
+    console.log("Failed to decode the revert payload with the deployed ABIs:", lookupError);
+  }
 
   // Check if this is an unrecognized error signature
   if (/Encoded error signature.*not found on ABI/i.test(originalParsedError)) {
